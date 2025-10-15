@@ -65,27 +65,6 @@ st.markdown("""
         color: #000000;
     }
     
-    /* Metric cards styling */
-    [data-testid="stMetricValue"] {
-        font-size: 32px;
-        color: #000000;
-        font-weight: 700;
-    }
-    
-    [data-testid="stMetricLabel"] {
-        color: #666666;
-        font-size: 14px;
-        font-weight: 500;
-    }
-    
-    [data-testid="metric-container"] {
-        background: #f9f9f9;
-        padding: 20px;
-        border-radius: 8px;
-        border: 2px solid #e0e0e0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    
     /* Form inputs styling */
     .stTextInput > div > div > input,
     .stNumberInput > div > div > input,
@@ -101,13 +80,6 @@ st.markdown("""
     .stNumberInput > div > div > input:focus {
         border-color: #000000;
         box-shadow: 0 0 0 1px #000000;
-    }
-    
-    /* Disabled input styling */
-    .stTextInput > div > div > input:disabled {
-        background-color: #f5f5f5;
-        color: #666666;
-        cursor: not-allowed;
     }
     
     /* Button styling */
@@ -179,30 +151,6 @@ st.markdown("""
         border-radius: 6px;
     }
     
-    /* Overview stat cards */
-    .stat-card {
-        background: #f9f9f9;
-        color: #000000;
-        padding: 25px;
-        border-radius: 8px;
-        text-align: center;
-        border: 2px solid #e0e0e0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    
-    .stat-card h4 {
-        font-size: 14px;
-        margin-bottom: 10px;
-        color: #666666;
-        font-weight: 500;
-    }
-    
-    .stat-card .number {
-        font-size: 32px;
-        font-weight: 700;
-        color: #000000;
-    }
-    
     /* Date display styling */
     .current-date-display {
         background: #f5f5f5;
@@ -234,6 +182,17 @@ st.markdown("""
         margin-bottom: 15px;
         color: #333333;
     }
+    
+    /* Period separator */
+    .period-separator {
+        background: #e0e0e0;
+        padding: 10px;
+        border-radius: 6px;
+        text-align: center;
+        margin: 20px 0;
+        font-weight: 600;
+        color: #333333;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -257,14 +216,39 @@ def save_records(records):
     with open('work_records.json', 'w') as f:
         json.dump(records, f, indent=2)
 
-# Calculate work duration considering breaks
-def calculate_work_hours(start_time, end_time, break_minutes):
+# Calculate time difference and format as HH:MM
+def calculate_time_duration(start_time, end_time):
+    """Calculate duration between two times and return as 'HH:MM' format"""
     if start_time and end_time:
-        duration = end_time - start_time
-        total_minutes = duration.total_seconds() / 60
-        work_minutes = total_minutes - break_minutes
-        return max(0, work_minutes / 60)  # Return hours
+        start_dt = datetime.combine(datetime.today(), start_time)
+        end_dt = datetime.combine(datetime.today(), end_time)
+        
+        # If end time is before start time, assume next day
+        if end_dt < start_dt:
+            end_dt += timedelta(days=1)
+        
+        duration = end_dt - start_dt
+        total_minutes = int(duration.total_seconds() / 60)
+        hours = total_minutes // 60
+        minutes = total_minutes % 60
+        
+        return f"{hours}:{minutes:02d}", total_minutes
+    return "0:00", 0
+
+# Convert time string to minutes
+def time_to_minutes(time_str):
+    """Convert 'HH:MM' format to total minutes"""
+    if ':' in time_str:
+        parts = time_str.split(':')
+        return int(parts[0]) * 60 + int(parts[1])
     return 0
+
+# Convert minutes to time string
+def minutes_to_time(minutes):
+    """Convert total minutes to 'HH:MM' format"""
+    hours = minutes // 60
+    mins = minutes % 60
+    return f"{hours}:{mins:02d}"
 
 # Custom header
 st.markdown('''
@@ -307,46 +291,82 @@ with tab1:
         help="Type your name to track your work hours"
     )
     
+    st.markdown("---")
+    
+    # Morning/First Period
+    st.markdown("### ☀️ Morning Period (Before Break)")
     col1, col2 = st.columns(2)
     
     with col1:
-        # Start time
-        start_time = st.time_input(
-            "Start Working ⏰",
-            value=datetime.now().replace(hour=8, minute=0, second=0, microsecond=0),
-            help="When did you start working? (You can type the exact time)",
-            step=60  # 1 minute steps
-        )
-        
-        # Break duration
-        break_duration = st.number_input(
-            "Break Duration (minutes) ☕",
-            min_value=0,
-            max_value=240,
-            value=30,
-            step=1,
-            help="Total break time in minutes (enter any number)"
+        morning_start = st.time_input(
+            "Start Work",
+            value=datetime.now().replace(hour=7, minute=56, second=0, microsecond=0),
+            help="When did you start working in the morning?",
+            step=60,
+            key="morning_start"
         )
     
     with col2:
-        # End time
-        end_time = st.time_input(
-            "Finish Working 🏁",
-            value=datetime.now().replace(hour=17, minute=0, second=0, microsecond=0),
-            help="When did you finish working? (You can type the exact time)",
-            step=60  # 1 minute steps
+        morning_end = st.time_input(
+            "Finish (Before Break)",
+            value=datetime.now().replace(hour=11, minute=23, second=0, microsecond=0),
+            help="When did you stop for break?",
+            step=60,
+            key="morning_end"
         )
     
-    # Combine date and time for calculation
-    start_datetime = datetime.combine(work_date, start_time)
-    end_datetime = datetime.combine(work_date, end_time)
+    # Calculate morning duration
+    morning_duration, morning_minutes = calculate_time_duration(morning_start, morning_end)
     
-    # If end time is before start time, assume it's the next day
-    if end_datetime < start_datetime:
-        end_datetime += timedelta(days=1)
+    st.markdown('<div class="period-separator">☕ BREAK TIME</div>', unsafe_allow_html=True)
     
-    # Calculate work hours
-    work_hours = calculate_work_hours(start_datetime, end_datetime, break_duration)
+    # Afternoon/Second Period
+    st.markdown("### 🌤️ Afternoon Period (After Break)")
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        afternoon_start = st.time_input(
+            "Start Work (After Break)",
+            value=datetime.now().replace(hour=12, minute=20, second=0, microsecond=0),
+            help="When did you return from break?",
+            step=60,
+            key="afternoon_start"
+        )
+    
+    with col4:
+        afternoon_end = st.time_input(
+            "Finish Work",
+            value=datetime.now().replace(hour=17, minute=45, second=0, microsecond=0),
+            help="When did you finish working?",
+            step=60,
+            key="afternoon_end"
+        )
+    
+    # Calculate afternoon duration
+    afternoon_duration, afternoon_minutes = calculate_time_duration(afternoon_start, afternoon_end)
+    
+    # Calculate break duration
+    break_duration_str, break_minutes = calculate_time_duration(morning_end, afternoon_start)
+    
+    # Calculate total work time
+    total_work_minutes = morning_minutes + afternoon_minutes
+    total_work_time = minutes_to_time(total_work_minutes)
+    
+    st.markdown("---")
+    
+    # Display summary
+    st.markdown("### 📊 Work Summary")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Morning Period", morning_duration)
+    with col2:
+        st.metric("Afternoon Period", afternoon_duration)
+    with col3:
+        st.metric("Break Time", break_duration_str)
+    with col4:
+        st.metric("Total Work Time", total_work_time)
     
     # Submit button
     st.markdown("---")
@@ -357,10 +377,14 @@ with tab1:
             record = {
                 "date": work_date.strftime("%Y-%m-%d"),
                 "employee_name": employee_name.strip(),
-                "start_time": start_time.strftime("%H:%M"),
-                "end_time": end_time.strftime("%H:%M"),
-                "break_minutes": break_duration,
-                "work_hours": round(work_hours, 2),
+                "morning_start": morning_start.strftime("%H:%M"),
+                "morning_end": morning_end.strftime("%H:%M"),
+                "afternoon_start": afternoon_start.strftime("%H:%M"),
+                "afternoon_end": afternoon_end.strftime("%H:%M"),
+                "morning_duration": morning_duration,
+                "afternoon_duration": afternoon_duration,
+                "break_duration": break_duration_str,
+                "total_work_time": total_work_time,
                 "team": TEAM_NAME,
                 "manager": MANAGER_NAME,
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -383,41 +407,113 @@ with tab2:
     if st.session_state.records:
         df = pd.DataFrame(st.session_state.records)
         
-        # Handle old records that don't have employee_name field
-        if 'employee_name' not in df.columns:
-            df['employee_name'] = 'Unknown'
-        
-        # Filter options
-        col1, col2 = st.columns([2, 1])
+        # Filter and action buttons at the top
+        col1, col2, col3 = st.columns([2, 1, 1])
         
         with col1:
             st.info(f"📊 Showing records for **{TEAM_NAME}** team under manager **{MANAGER_NAME}**")
         
         with col2:
-            if st.button("🗑️ Clear All Records", type="secondary"):
-                if st.session_state.get('confirm_delete', False):
+            # Search/Filter by name
+            search_name = st.text_input("🔍 Search by name", placeholder="Type name to filter...", key="search_filter")
+        
+        with col3:
+            if st.button("🗑️ Clear All Records", type="secondary", use_container_width=True):
+                if st.session_state.get('confirm_delete_all', False):
                     st.session_state.records = []
                     save_records([])
-                    st.session_state.confirm_delete = False
+                    st.session_state.confirm_delete_all = False
                     st.rerun()
                 else:
-                    st.session_state.confirm_delete = True
+                    st.session_state.confirm_delete_all = True
                     st.warning("⚠️ Click again to confirm deletion")
         
-        # Display table
-        st.dataframe(
-            df[['date', 'employee_name', 'start_time', 'end_time', 'break_minutes', 'work_hours']],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "date": "Date",
-                "employee_name": "Employee Name",
-                "start_time": "Start Time",
-                "end_time": "End Time",
-                "break_minutes": "Break (min)",
-                "work_hours": "Work Hours"
-            }
-        )
+        # Filter records if search is active
+        display_records = st.session_state.records.copy()
+        if search_name:
+            display_records = [r for r in display_records if search_name.lower() in r.get('employee_name', '').lower()]
+        
+        st.markdown("---")
+        
+        # Check if we have records to display
+        if len(display_records) == 0:
+            st.warning("No records found matching your search.")
+        else:
+            # Create table header
+            st.markdown("""
+                <style>
+                .record-table {
+                    width: 100%;
+                    margin: 10px 0;
+                }
+                .record-row {
+                    display: grid;
+                    grid-template-columns: 1.5fr 1fr 1fr 1fr 1fr 1fr 1fr 0.5fr;
+                    gap: 10px;
+                    padding: 15px;
+                    border-bottom: 1px solid #e0e0e0;
+                    align-items: center;
+                    background: white;
+                }
+                .record-row:hover {
+                    background: #f5f5f5;
+                }
+                .record-header {
+                    display: grid;
+                    grid-template-columns: 1.5fr 1fr 1fr 1fr 1fr 1fr 1fr 0.5fr;
+                    gap: 10px;
+                    padding: 15px;
+                    background: #000000;
+                    color: white;
+                    font-weight: 600;
+                }
+                .record-cell {
+                    font-size: 14px;
+                }
+                </style>
+            """, unsafe_allow_html=True)
+            
+            # Table header
+            st.markdown("""
+                <div class="record-header">
+                    <div>Employee Name</div>
+                    <div>Date</div>
+                    <div>Morning Start</div>
+                    <div>Morning End</div>
+                    <div>Afternoon Start</div>
+                    <div>Afternoon End</div>
+                    <div>Total Work</div>
+                    <div>Action</div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # Display each record with delete button
+            for idx, record in enumerate(display_records):
+                cols = st.columns([1.5, 1, 1, 1, 1, 1, 1, 0.5])
+                
+                with cols[0]:
+                    st.write(record.get('employee_name', 'N/A'))
+                with cols[1]:
+                    st.write(record.get('date', 'N/A'))
+                with cols[2]:
+                    st.write(record.get('morning_start', 'N/A'))
+                with cols[3]:
+                    st.write(record.get('morning_end', 'N/A'))
+                with cols[4]:
+                    st.write(record.get('afternoon_start', 'N/A'))
+                with cols[5]:
+                    st.write(record.get('afternoon_end', 'N/A'))
+                with cols[6]:
+                    st.write(f"**{record.get('total_work_time', 'N/A')}**")
+                with cols[7]:
+                    if st.button("🗑️", key=f"del_{idx}", help="Delete this record"):
+                        # Find and remove the record
+                        original_idx = st.session_state.records.index(record)
+                        deleted_name = st.session_state.records[original_idx].get('employee_name', 'Record')
+                        st.session_state.records.pop(original_idx)
+                        save_records(st.session_state.records)
+                        st.success(f"✅ Deleted record for {deleted_name}")
+                        st.rerun()
         
         # Download button
         csv = df.to_csv(index=False)
@@ -434,7 +530,6 @@ with tab2:
 # Footer
 st.markdown("---")
 st.markdown(
-    f"<p style='text-align: center; color: #666666;'>Work Hours Tracking System v1.0 | "
-    f"Digital Engineering Team | Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>",
+    "<p style='text-align: center; color: #666666;'>Created by Digital Engineering Team for Digital Engineering Team - Schmalz V 1.5 | 2025</p>",
     unsafe_allow_html=True
 )
